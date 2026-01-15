@@ -1,65 +1,146 @@
-import Image from "next/image";
+'use client';
+import { useState } from 'react';
+import axios from 'axios';
 
 export default function Home() {
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [logs, setLogs] = useState([]);
+
+  const runSimulation = async (shieldEnabled) => {
+    setLoading(true);
+    setLogs([]); 
+    setStats(null);
+
+    const start = Date.now();
+    
+    // 1. PREPARE THE REQUESTS
+    const requests = Array.from({ length: 51 }).map(async(_, i) => {
+      await new Promise(resolve => setTimeout(resolve, i * 50));
+      return axios.get(`/api/simulate?shield=${shieldEnabled}`)
+        .then(res => ({ ...res.data, status: 'success', id: i }))
+        // 👇 NEW: If it crashes (500), we catch it here!
+        .catch(err => ({ 
+          status: 'error', 
+          source: 'CRASH', 
+          error: err.message, 
+          id: i 
+        }))
+    });
+
+    try {
+      // 2. WAIT FOR ALL (Even the crashes)
+      const results = await Promise.all(requests);
+      const duration = Date.now() - start;
+
+      // 3. COUNT THE RESULTS
+      // A "Crash" counts as a DB Hit (because it tried and failed)
+      const crashes = results.filter(r => r.status === 'error').length;
+      const dbHits = results.filter(r => r.source === 'DATABASE' || r.source === 'DATABASE_UNPROTECTED').length + crashes;
+      
+      const protectedReqs = results.filter(r => 
+        r.status === 'success' && 
+        r.source !== 'DATABASE' && 
+        r.source !== 'DATABASE_UNPROTECTED'
+      ).length;
+
+      const savings = ((51 - dbHits) / 51) * 100;
+
+      setStats({
+        total: requests.length,
+        dbHits: `${dbHits} ${crashes > 0 ? `(${crashes} Crashed)` : ''}`,
+        protectedReqs,
+        savings: savings.toFixed(1) + '%',
+        duration,
+        type: shieldEnabled ? "SHIELD ON (Protected)" : "SHIELD OFF (Vulnerable)"
+      });
+
+      setLogs(results.slice(0, 5));
+
+    } catch (error) {
+      console.error("Critical Failure", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.js file.
+    <main className="min-h-screen p-10 bg-gray-900 text-white font-mono">
+      <div className="max-w-4xl mx-auto space-y-8">
+        
+        <div className="border-b border-gray-700 pb-5">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+            FlashGuard Defense System
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-gray-400 mt-2">
+            High-Concurrency Request Coalescing Demo
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="grid grid-cols-2 gap-6">
+          <div className="p-6 border border-red-900 bg-red-900/10 rounded-xl">
+            <h2 className="text-xl font-bold text-red-400 mb-2">🔴 Simulate Crash</h2>
+            <p className="text-sm text-gray-400 mb-4">
+              Fires 50 + requests directly at Firestore. <br/>
+              <span className="text-red-300">Warning: Creates 1,000 DB reads.</span>
+            </p>
+            <button 
+              onClick={() => runSimulation(false)}
+              disabled={loading}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 rounded font-bold transition disabled:opacity-50"
+            >
+              {loading ? "Attacking..." : "FIRE (Shield OFF)"}
+            </button>
+          </div>
+
+          <div className="p-6 border border-green-900 bg-green-900/10 rounded-xl">
+            <h2 className="text-xl font-bold text-green-400 mb-2">🟢 Activate Shield</h2>
+            <p className="text-sm text-gray-400 mb-4">
+              Fires 50+ requests through FlashGuard. <br/>
+              <span className="text-green-300">Goal: 1 DB read, 999 Coalesced.</span>
+            </p>
+            <button 
+              onClick={() => runSimulation(true)}
+              disabled={loading}
+              className="w-full py-3 bg-green-600 hover:bg-green-700 rounded font-bold transition disabled:opacity-50"
+            >
+              {loading ? "Processing..." : "FIRE (Shield ON)"}
+            </button>
+          </div>
         </div>
-      </main>
-    </div>
+
+        {stats && (
+          <div className="bg-gray-800 rounded-xl p-8 border border-gray-700 animation-fade-in">
+            <div className="flex justify-between items-end mb-6">
+              <h3 className="text-2xl font-bold">{stats.type}</h3>
+              <span className="text-gray-400">{stats.duration}ms total time</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="p-4 bg-gray-700 rounded-lg">
+                <div className="text-sm text-gray-400">Total Users</div>
+                <div className="text-3xl font-bold">{stats.total}</div>
+              </div>
+              <div className="p-4 rounded-lg bg-red-900/50 text-red-400">
+                <div className="text-sm opacity-80">Database Load</div>
+                <div className="text-xl font-bold">{stats.dbHits}</div>
+              </div>
+              <div className="p-4 bg-blue-900/30 text-blue-400 rounded-lg">
+                <div className="text-sm opacity-80">Cost Savings</div>
+                <div className="text-3xl font-bold">{stats.savings}</div>
+              </div>
+            </div>
+
+            <div className="mt-6 p-4 bg-black rounded font-mono text-xs overflow-hidden">
+              <div className="text-gray-500 mb-2">sample_telemetry (first 5 requests):</div>
+              <pre className="text-green-400">
+                {JSON.stringify(logs, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </main>
   );
 }
