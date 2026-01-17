@@ -15,7 +15,7 @@ const flashguard = async (key,fetchFunction, useShield = true)=>{
         throw new Error("Database Crash : System Overloaded");
      }
    }
-   while(Date.now() - start < 2000){
+   while(Date.now() - start < 5000){
      const cached = await redis.get(cacheKey);
      if(cached){
         return {
