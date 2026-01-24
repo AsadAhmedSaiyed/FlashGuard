@@ -184,7 +184,7 @@ export default function Home() {
           </Link>
         </div>
         <div className="mt-10 text-gray-600 text-sm">
-          MIT License © 2025 Asad Ahmed Saiyed
+          MIT License © 2025 Asad Ahmed Saiyed | asadahmedsaiyed786@gmail.com
         </div>
       </section>
     </main>
