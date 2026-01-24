@@ -9,13 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@upstash/redis": "^1.36.1",
+    "@asad-ahmed-saiyed/flashguard": "^1.0.1",
     "axios": "^1.13.2",
     "firebase": "^12.8.0",
+    "ioredis": "^5.9.2",
     "next": "16.1.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "recharts": "^3.6.0"
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

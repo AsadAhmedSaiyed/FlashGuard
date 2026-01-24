@@ -1,48 +1,19 @@
-import { redis } from "./redis";
+import { FlashGuard,RedisDriver } from "@asad-ahmed-saiyed/flashguard";
+import Redis from "ioredis";
 
-const flashguard = async (key,fetchFunction, useShield = true)=>{
-   const lockKey = `lock:${key}`;
-   const cacheKey = `data:${key}`;
-   const start = Date.now();
-
-   if(!useShield){
-     try{
-        const data = await fetchFunction();
-        return {
-           data, source:'DATABASE_UNPROTECTED'
-        };
-     }catch(err){
-        throw new Error("Database Crash : System Overloaded");
-     }
-   }
-   while(Date.now() - start < 5000){
-     const cached = await redis.get(cacheKey);
-     if(cached){
-        return {
-            data: cached,
-            source: 'CACHE'
-        };
-     }
-     const isLeader = await redis.set(lockKey, 'locked',{nx:true, ex:5});
-
-     if(isLeader == "OK"){
-        try{
-            const data = await fetchFunction();
-
-            await redis.set(cacheKey,data,{ex:60});
-            return {
-                data,
-                source:'DATABASE'
-            };
-        }catch(err){
-            await redis.del(lockKey);
-            console.error("Critical error : ",err);
-            continue;
-        }
-     }
-     await new Promise(res=>setTimeout(res,50));
-   }
-   throw new Error("System Timeout: Unable to recover");
+const globalForRedis = global;
+if(!globalForRedis.redis){
+    globalForRedis.redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 }
+const redis = globalForRedis.redis;
+const driver = new RedisDriver(redis);
 
-export default flashguard;
+const guard = new FlashGuard(driver);
+
+export default guard;
+
+guard.on("hit", (key) => console.log(`Cache HIT: ${key}`));
+guard.on("miss", (key) => console.log(`Cache MISS (Fetching DB): ${key}`));
+guard.on("coalesced", (key) => console.log(`COALESCED (Saved DB Call): ${key}`));
+guard.on("swr", (key) => console.log(`Stale Return (Background Update): ${key}`));
+guard.on("circuit-tripped", () => console.log(`CIRCUIT OPEN! Redis is dead.`));
